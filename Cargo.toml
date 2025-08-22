@@ -5,6 +5,12 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-ratatui = "0.29.0"
 crossterm = "0.29.0"
-futures = "0.3"
+
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
