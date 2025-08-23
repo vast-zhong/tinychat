@@ -32,30 +32,88 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // main loop
     loop {
-        let (mut socket, _) = listener.accept().await?;
+        let (socket, addr) = listener.accept().await?;
+        println!("new client connected: {:?}", addr);
 
+        let tx_clone = tx.clone();
+        // only increments the reference count, no data is copied 
+        let clients_clone = clients.clone();
+        // share one counter
+        let counter_clone = client_counter.clone();
+
+        // create independent async process task for each client
+        // the code in {} become a async code block, compile into a Future
         tokio::spawn(async move {
-            let mut buf = [0; 1024];
-
-            // In a loop, read data from the socket and write the data back.
-            loop {
-                let n = match socket.read(&mut buf).await {
-                    // socket closed
-                    Ok(0) => return,
-                    Ok(n) => n,
-                    Err(e) => {
-                        eprintln!("failed to read from socket; err = {:?}", e);
-                        return;
-                    }
-                };
-
-                // Write the data back
-                if let Err(e) = socket.write_all(&buf[0..n]).await {
-                    eprintln!("failed to write to socket; err = {:?}", e);
-                    return;
-                }
+            // Err(e) is the return value of handle_client
+            if let Err(e) = handle_client(socket, tx_clone, clients_clone, counter_clone).await {
+                eprintln!("error: {}", e);
             }
         });
     }
 }
 
+async fn handle_client(
+    socket: TcpStream,
+    tx_clone: broadcast::Sender<String>,
+    clients_clone: Clients,
+    counter_clone: Arc<Mutex<u32>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+
+    // split the socket into reader and writer
+    // TcpStream.into_split() a bidirectional TCP connection into two ends:
+    // reader: OwnedReadHalf
+    // writer: OwnedWriteHalf
+    let (reader, writer) = socket.into_split();
+    // use BufReader to read the data from the reader
+    let mut reader = BufReader::new(reader);
+    
+    // get the client id 
+    let client_id = {
+        let mut counter_guard = counter_clone.lock().await;
+        *counter_guard += 1;
+        *counter_guard
+    };
+    
+    {
+        let mut clients_guard = clients_clone.lock().await;
+        clients_guard.insert(client_id, writer);
+    }
+    
+    println!("client {} connected", client_id);
+    
+    let join_msg = format!("system meaasge: client {} join the chat\n", client_id);
+    let _ = tx_clone.send(join_msg);
+
+    let mut rx = tx_clone.subscribe();
+    let clients_for_broadcast = clients_clone.clone();
+    tokio::spawn(async move {
+        while let Ok(msg) = rx.recv().await {
+            let mut clients_guard = clients_for_broadcast.lock().await;
+            let mut to_remove = Vec::new();
+            
+            for (id, writer) in clients_guard.iter_mut() {
+                if let Err(_) = writer.write_all(msg.as_bytes()).await {
+                    to_remove.push(*id);
+                }
+            }
+            
+            for id in to_remove {
+                clients_guard.remove(&id);
+                println!("client {} disconnect", id);
+            }
+        }
+    });
+
+    // {
+    //     let mut clients_guard = clients_clone.lock().await;
+    //     clients_guard.remove(&client_id);
+    // }
+    
+    // let leave_msg = format!("系统消息: 客户端 {} 离开了聊天室\n", client_id);
+    // let _ = tx.send(leave_msg);
+    
+    // println!("客户端 {} 断开连接", client_id);
+
+
+    Ok(())
+}
