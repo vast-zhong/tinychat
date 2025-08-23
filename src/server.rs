@@ -24,11 +24,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("server run on 127.0.0.1:8080");
 
     // broadcast channel
-    let (tx, _rx) = broadcast::channel::<String>(100);
+    let (tx, mut rx) = broadcast::channel::<String>(100);
     
     // store all connected clients
     let clients: Clients = Arc::new(Mutex::new(HashMap::new()));
     let client_counter = Arc::new(Mutex::new(0u32));
+
+    // 创建全局广播任务
+    let clients_for_broadcast = clients.clone();
+    tokio::spawn(async move {
+        while let Ok(msg) = rx.recv().await {
+            let mut clients_guard = clients_for_broadcast.lock().await;
+            let mut to_remove = Vec::new();
+            
+            for (id, writer) in clients_guard.iter_mut() {
+                if let Err(_) = writer.write_all(msg.as_bytes()).await {
+                    to_remove.push(*id);
+                }
+            }
+            
+            for id in to_remove {
+                clients_guard.remove(&id);
+                println!("client {} disconnect", id);
+            }
+        }
+    });
 
     // main loop
     loop {
@@ -84,48 +104,24 @@ async fn handle_client(
     let join_msg = format!("system message: client {} join the chat\n", client_id);
     let _ = tx_clone.send(join_msg);
 
-    let mut rx = tx_clone.subscribe();
-    let clients_for_broadcast = clients_clone.clone();
-    tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            let mut clients_guard = clients_for_broadcast.lock().await;
-            let mut to_remove = Vec::new();
-            
-            for (id, writer) in clients_guard.iter_mut() {
-                if let Err(_) = writer.write_all(msg.as_bytes()).await {
-                    to_remove.push(*id);
-                }
-            }
-            
-            for id in to_remove {
-                clients_guard.remove(&id);
-                println!("client {} disconnect", id);
-            }
-        }
-    });
-
-    // 读取客户端消息的循环
+    // read the data from client
     let mut line = String::new();
     loop {
         line.clear();
         match reader.read_line(&mut line).await {
             Ok(0) => {
-                // 客户端断开连接
                 break;
             }
             Ok(_) => {
-                // 收到客户端消息，广播给所有客户端
                 let msg = format!("client {}: {}", client_id, line);
                 let _ = tx_clone.send(msg);
             }
             Err(_) => {
-                // 读取错误，客户端可能断开连接
                 break;
             }
         }
     }
 
-    // 客户端断开连接时的清理工作
     {
         let mut clients_guard = clients_clone.lock().await;
         clients_guard.remove(&client_id);
