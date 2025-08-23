@@ -81,7 +81,7 @@ async fn handle_client(
     
     println!("client {} connected", client_id);
     
-    let join_msg = format!("system meaasge: client {} join the chat\n", client_id);
+    let join_msg = format!("system message: client {} join the chat\n", client_id);
     let _ = tx_clone.send(join_msg);
 
     let mut rx = tx_clone.subscribe();
@@ -104,16 +104,37 @@ async fn handle_client(
         }
     });
 
-    // {
-    //     let mut clients_guard = clients_clone.lock().await;
-    //     clients_guard.remove(&client_id);
-    // }
-    
-    // let leave_msg = format!("系统消息: 客户端 {} 离开了聊天室\n", client_id);
-    // let _ = tx.send(leave_msg);
-    
-    // println!("客户端 {} 断开连接", client_id);
+    // 读取客户端消息的循环
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                // 客户端断开连接
+                break;
+            }
+            Ok(_) => {
+                // 收到客户端消息，广播给所有客户端
+                let msg = format!("client {}: {}", client_id, line);
+                let _ = tx_clone.send(msg);
+            }
+            Err(_) => {
+                // 读取错误，客户端可能断开连接
+                break;
+            }
+        }
+    }
 
+    // 客户端断开连接时的清理工作
+    {
+        let mut clients_guard = clients_clone.lock().await;
+        clients_guard.remove(&client_id);
+    }
+    
+    let leave_msg = format!("system message: client {} left the chat\n", client_id);
+    let _ = tx_clone.send(leave_msg);
+    
+    println!("client {} disconnected", client_id);
 
     Ok(())
 }
