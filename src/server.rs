@@ -114,6 +114,7 @@ async fn handle_client(
             }
             Ok(_) => {
                 let msg = format!("client {}: {}", client_id, line);
+                println!("Received message from client {}: {}", client_id, line.trim());
                 let _ = tx_clone.send(msg);
             }
             Err(_) => {
