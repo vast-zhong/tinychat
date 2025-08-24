@@ -3,8 +3,6 @@
 一个用 Rust 编写的超轻量本地聊天室示例，基于 Tokio 异步网络和 Crossterm 终端输入处理。
 
 - 多客户端广播：所有已连接客户端都会收到任何一位用户发送的消息
-- 客户端流畅输入体验：字符输入、退格、回车发送、Ctrl+C 退出
-- 去重显示策略：仅处理按下事件（KeyEventKind::Press），并在发送前清理本地输入行，避免本地与服务端广播重复显示
 
 ## 目录
 - [运行要求](#运行要求)
@@ -34,13 +32,9 @@
 
 ## 使用说明
 - 输入任意文本，按 Enter 发送
-- Backspace 支持删除输入缓冲区中的字符
 - Ctrl+C 可退出客户端
-- 客户端在按下 Enter 时会清理本地当前输入行，不会本地回显该条消息；随后仅显示服务端广播回来的最终消息，从而避免“重复显示”
 
 ## 项目结构
-- <mcfile name="server.rs" path="f:\AllCode\RUST\tinychat\src\server.rs"></mcfile>
-- <mcfile name="client.rs" path="f:\AllCode\RUST\tinychat\src\client.rs"></mcfile>
 - Cargo.toml：二进制目标配置（server、client）与依赖（tokio, crossterm）
 
 ## 配置
@@ -58,18 +52,6 @@
   - 启用终端原始模式，监听键盘事件
   - 仅处理 KeyEventKind::Press，避免按键释放/重复导致的多次处理
   - 输入字符时本地回显；按下 Enter 发送前会清理本地当前输入行，之后仅显示服务端广播回来的消息
-
-## 常见问题
-1) 输入字符重复显示怎么办？
-- 本项目已仅处理 KeyEventKind::Press 并在发送时清理本地输入行，通常不会出现重复显示。
-- 若仍出现：
-  - 确认你只在一个客户端里按下 Enter，不要在本地再手动打印同一条消息
-  - 确认没有同时运行多个连接到同一服务端的客户端实例而产生误会
-  - 提供你的终端类型（Windows Terminal / PowerShell / CMD / 其他），便于进一步排查
-
-2) 收不到消息或连接被断开？
-- 确认服务端已启动且监听 127.0.0.1:8080
-- 确认客户端连接的地址与端口与服务端一致
 
 ## 许可证
 - 本项目使用 MIT 许可证，详见根目录 <mcfile name="LICENSE" path="f:\AllCode\RUST\tinychat\LICENSE"></mcfile>
